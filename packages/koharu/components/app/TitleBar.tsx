@@ -124,7 +124,11 @@ export function TitleBar() {
                       disabled={exporting}
                       onClick={() => exportProject(format)}
                     >
-                      {format === 'cbz' ? 'CBZ (by group)…' : format === 'zip' ? 'ZIP (by group)…' : `${format.toUpperCase()}…`}
+                      {format === 'cbz'
+                        ? 'CBZ (by group)…'
+                        : format === 'zip'
+                          ? 'ZIP (by group)…'
+                          : `${format.toUpperCase()}…`}
                     </MenubarItem>
                   ))}
                 </MenubarSubContent>
