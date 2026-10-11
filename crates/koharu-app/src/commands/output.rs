@@ -2,7 +2,7 @@ use anyhow::{Context as _, Result};
 use futures::future::try_join_all;
 use image::{
     ExtendedColorType, ImageEncoder as _,
-    codecs::png::{CompressionType, FilterType, PngEncoder},
+    codecs::{jpeg::JpegEncoder, png::{CompressionType, FilterType, PngEncoder}},
 };
 use koharu_psd::{PsdExportOptions, export_page};
 use koharu_rasterizer::{Raster, RasterOptions, Rasterizer};
@@ -34,9 +34,12 @@ impl IpcResponse for ThumbnailBytes {
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
     Png,
+    Jpg,
     Psd,
-    Cbz,
-    Zip,
+    PngCbz,
+    JpgCbz,
+    PngZip,
+    JpgZip,
 }
 
 #[tracing::instrument(
@@ -50,6 +53,7 @@ pub enum ExportFormat {
 pub(crate) async fn export(
     window: WebviewWindow<CefRuntime>,
     format: ExportFormat,
+    quality: Option<u8>,
     project: State<'_, CurrentProject>,
     desktop: State<'_, Desktop>,
 ) -> std::result::Result<(), Error> {
@@ -76,16 +80,17 @@ pub(crate) async fn export(
 
     let dialog = rfd::AsyncFileDialog::new().set_parent(&window);
     let destination = match format {
-        ExportFormat::Png | ExportFormat::Psd => dialog.pick_folder().await,
-        ExportFormat::Cbz | ExportFormat::Zip if group_names.len() > 1 => dialog.pick_folder().await,
-        ExportFormat::Cbz => {
+        ExportFormat::Png | ExportFormat::Jpg | ExportFormat::Psd => dialog.pick_folder().await,
+        ExportFormat::PngCbz | ExportFormat::JpgCbz | ExportFormat::PngZip | ExportFormat::JpgZip
+            if group_names.len() > 1 => dialog.pick_folder().await,
+        ExportFormat::PngCbz | ExportFormat::JpgCbz => {
             dialog
                 .add_filter("Comic Book Archive", &["cbz"])
                 .set_file_name(format!("{name}.cbz"))
                 .save_file()
                 .await
         }
-        ExportFormat::Zip => {
+        ExportFormat::PngZip | ExportFormat::JpgZip => {
             dialog
                 .add_filter("ZIP Archive", &["zip"])
                 .set_file_name(format!("{name}.zip"))
@@ -96,11 +101,17 @@ pub(crate) async fn export(
     let Some(destination) = destination.map(|destination| destination.path().to_owned()) else {
         return Ok(());
     };
+    let jpeg_quality = quality.unwrap_or(90);
+    if matches!(format, ExportFormat::Jpg | ExportFormat::JpgCbz | ExportFormat::JpgZip)
+        && !(1..=100).contains(&jpeg_quality)
+    {
+        return Err(anyhow::anyhow!("JPEG quality must be between 1 and 100").into());
+    }
     let renderer = desktop.renderer();
     let rasterizer = desktop.rasterizer().await?;
     let frames = try_join_all(pages.iter().map(|&page| renderer.render(&snapshot, page))).await?;
     let (extension, images) = match format {
-        ExportFormat::Png | ExportFormat::Cbz | ExportFormat::Zip => {
+        ExportFormat::Png | ExportFormat::PngCbz | ExportFormat::PngZip => {
             let images = tokio_rayon::spawn(move || {
                 frames
                     .par_iter()
@@ -127,6 +138,29 @@ pub(crate) async fn export(
             .await?;
             ("png", images)
         }
+        ExportFormat::Jpg | ExportFormat::JpgCbz | ExportFormat::JpgZip => {
+            let images = tokio_rayon::spawn(move || {
+                frames
+                    .par_iter()
+                    .map(|frame| -> Result<_> {
+                        let image = rasterizer
+                            .rasterize(&frame.raster_frame()?, RasterOptions::default())?
+                            .image;
+                        let image = image::DynamicImage::ImageRgba8(image).to_rgb8();
+                        let mut bytes = Vec::new();
+                        JpegEncoder::new_with_quality(&mut bytes, jpeg_quality).write_image(
+                            image.as_raw(),
+                            image.width(),
+                            image.height(),
+                            ExtendedColorType::Rgb8,
+                        )?;
+                        Ok(bytes)
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .await?;
+            ("jpg", images)
+        }
         ExportFormat::Psd => {
             let options = PsdExportOptions::default();
             let images = try_join_all(
@@ -139,7 +173,10 @@ pub(crate) async fn export(
         }
     };
     tokio_rayon::spawn(move || -> Result<()> {
-        if matches!(format, ExportFormat::Cbz | ExportFormat::Zip) {
+        if matches!(
+            format,
+            ExportFormat::PngCbz | ExportFormat::JpgCbz | ExportFormat::PngZip | ExportFormat::JpgZip
+        ) {
             let mut groups: Vec<(String, Vec<(String, Vec<u8>)>)> = Vec::new();
 
             // Preserve the original archive boundary while keeping page order within each group.
@@ -161,14 +198,14 @@ pub(crate) async fn export(
             }
 
             let multiple_groups = groups.len() > 1;
-            for (group_index, (group, entries)) in groups.into_iter().enumerate() {
+            for (group, entries) in groups {
                 let archive_destination = if multiple_groups {
                     let safe_group = group
                         .trim()
                         .trim_end_matches(|character: char| character == '.' || character.is_whitespace())
                         .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
                     let archive_extension = match format {
-                        ExportFormat::Zip => "zip",
+                        ExportFormat::PngZip | ExportFormat::JpgZip => "zip",
                         _ => "cbz",
                     };
                     destination.join(format!(
@@ -195,9 +232,10 @@ pub(crate) async fn export(
                         .map_or(page_name, |(stem, _)| stem)
                         .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
                     let page_name = format!(
-                        "{:0width$}_{}.png",
+                        "{:0width$}_{}.{}",
                         index + 1,
-                        if page_name.is_empty() { "page" } else { &page_name }
+                        if page_name.is_empty() { "page" } else { &page_name },
+                        extension
                     );
                     // PNG data is already compressed.
                     let options = zip::write::SimpleFileOptions::default()
