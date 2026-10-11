@@ -32,6 +32,8 @@ pub(super) enum Format {
     Pdf,
 }
 
+pub(super) const ARCHIVE_GROUP_SEPARATOR: &str = "\u{001f}";
+
 #[derive(Debug)]
 pub(super) struct EncodedPage {
     pub(super) name: String,
@@ -48,6 +50,20 @@ pub(super) struct Page {
 
 fn decode(path: &Path, source: EncodedPage) -> Result<Page> {
     let EncodedPage { name, bytes } = source;
+    let name = match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(|extension| extension.parse::<Format>().ok())
+    {
+        Some(Format::Zip | Format::Rar | Format::Pdf) => {
+            let group = path
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "archive".to_owned());
+            format!("{group}{ARCHIVE_GROUP_SEPARATOR}{name}")
+        }
+        _ => name,
+    };
     let format = image::guess_format(&bytes).with_context(|| {
         format!(
             "failed to identify imported image {} ({name})",
