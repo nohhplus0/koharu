@@ -59,6 +59,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/t
 import { cn } from '@koharu/ui/lib/utils'
 
 const emptyPages: PageSummary[] = []
+const archiveGroupSeparator = '\u001f'
+
+function splitArchiveLabel(label: string): { group: string | null; label: string } {
+  const separator = label.indexOf(archiveGroupSeparator)
+  return separator < 0
+    ? { group: null, label }
+    : { group: label.slice(0, separator), label: label.slice(separator + 1) }
+}
 
 interface IntentPrefetchState {
   project: string
@@ -83,19 +91,41 @@ export function PageRail() {
   const [renaming, setRenaming] = useState<PageSummary | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const normalized = query.trim().toLocaleLowerCase()
-  const visiblePages = useMemo(
-    () =>
-      pages
-        .map((page, index) => ({ page, index }))
-        .filter(({ page }) => !normalized || page.label.toLocaleLowerCase().includes(normalized)),
-    [normalized, pages],
-  )
+  const visibleRows = useMemo(() => {
+    const rows: Array<
+      | { kind: 'group'; key: string; group: string }
+      | { kind: 'page'; page: PageSummary; index: number }
+    > = []
+    let previousGroup: string | null = null
+
+    pages.forEach((rawPage, index) => {
+      const { group, label } = splitArchiveLabel(rawPage.label)
+      if (
+        normalized &&
+        !label.toLocaleLowerCase().includes(normalized) &&
+        !group?.toLocaleLowerCase().includes(normalized)
+      ) {
+        return
+      }
+
+      if (group && group !== previousGroup) {
+        rows.push({ kind: 'group', key: `${group}:${index}`, group })
+      }
+      previousGroup = group
+      rows.push({ kind: 'page', page: { ...rawPage, label }, index })
+    })
+
+    return rows
+  }, [normalized, pages])
   const pageList = useRef<HTMLDivElement>(null)
   const pageVirtualizer = useVirtualizer({
-    count: visiblePages.length,
+    count: visibleRows.length,
     getScrollElement: () => pageList.current,
-    getItemKey: (index) => visiblePages[index]?.page.id ?? index,
-    estimateSize: () => 72,
+    getItemKey: (index) => {
+      const row = visibleRows[index]
+      return row?.kind === 'group' ? `group:${row.key}` : row?.page.id ?? index
+    },
+    estimateSize: (index) => (visibleRows[index]?.kind === 'group' ? 26 : 72),
     gap: 2,
     overscan: 6,
     initialRect: { width: 240, height: 600 },
@@ -288,9 +318,8 @@ export function PageRail() {
           >
             <div className='relative w-full' style={{ height: pageVirtualizer.getTotalSize() }}>
               {pageVirtualizer.getVirtualItems().map((virtualRow) => {
-                const item = visiblePages[virtualRow.index]
+                const item = visibleRows[virtualRow.index]
                 if (!item) return null
-                const { page, index } = item
                 return (
                   <div
                     key={virtualRow.key}
@@ -298,26 +327,33 @@ export function PageRail() {
                     className='absolute top-0 left-0 w-full'
                     style={{ transform: `translateY(${virtualRow.start}px)` }}
                   >
-                    <PageItem
-                      page={page}
-                      active={active === page.id}
-                      selected={selected.includes(page.id)}
-                      dragged={dragged === page.id}
-                      onIntent={active === page.id ? undefined : () => prefetchOnIntent(page.id)}
-                      onSelect={(additive, range) => select(index, additive, range)}
-                      onDragStart={() => setDragged(page.id)}
-                      onDragEnd={() => setDragged(null)}
-                      onRename={() => openRename(page)}
-                      onDelete={() => deletePage(page.id)}
-                      onDrop={() => {
-                        if (dragged && dragged !== page.id) {
-                          void call(commands.movePage, dragged, index)
-                            .then(() => refresh(projectKey, pagesKey))
-                            .catch(() => undefined)
-                        }
-                        setDragged(null)
-                      }}
-                    />
+                    {item.kind === 'group' ? (
+                      <div className='flex h-[26px] items-center gap-1.5 px-2 text-[10px] font-semibold text-muted-foreground'>
+                        <FolderOpen className='size-3 shrink-0' aria-hidden='true' />
+                        <span className='truncate'>{item.group}</span>
+                      </div>
+                    ) : (
+                      <PageItem
+                        page={item.page}
+                        active={active === item.page.id}
+                        selected={selected.includes(item.page.id)}
+                        dragged={dragged === item.page.id}
+                        onIntent={active === item.page.id ? undefined : () => prefetchOnIntent(item.page.id)}
+                        onSelect={(additive, range) => select(item.index, additive, range)}
+                        onDragStart={() => setDragged(item.page.id)}
+                        onDragEnd={() => setDragged(null)}
+                        onRename={() => openRename(item.page)}
+                        onDelete={() => deletePage(item.page.id)}
+                        onDrop={() => {
+                          if (dragged && dragged !== item.page.id) {
+                            void call(commands.movePage, dragged, item.index)
+                              .then(() => refresh(projectKey, pagesKey))
+                              .catch(() => undefined)
+                          }
+                          setDragged(null)
+                        }}
+                      />
+                    )}
                   </div>
                 )
               })}
