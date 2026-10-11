@@ -333,26 +333,28 @@ export function PageRail() {
                         <span className='truncate'>{item.group}</span>
                       </div>
                     ) : (
-                      <PageItem
-                        page={item.page}
-                        active={active === item.page.id}
-                        selected={selected.includes(item.page.id)}
-                        dragged={dragged === item.page.id}
-                        onIntent={active === item.page.id ? undefined : () => prefetchOnIntent(item.page.id)}
-                        onSelect={(additive, range) => select(item.index, additive, range)}
-                        onDragStart={() => setDragged(item.page.id)}
-                        onDragEnd={() => setDragged(null)}
-                        onRename={() => openRename(item.page)}
-                        onDelete={() => deletePage(item.page.id)}
-                        onDrop={() => {
-                          if (dragged && dragged !== item.page.id) {
-                            void call(commands.movePage, dragged, item.index)
-                              .then(() => refresh(projectKey, pagesKey))
-                              .catch(() => undefined)
-                          }
-                          setDragged(null)
-                        }}
-                      />
+                      <div className={item.page.label ? 'pl-3' : undefined}>
+                        <PageItem
+                          page={item.page}
+                          active={active === item.page.id}
+                          selected={selected.includes(item.page.id)}
+                          dragged={dragged === item.page.id}
+                          onIntent={active === item.page.id ? undefined : () => prefetchOnIntent(item.page.id)}
+                          onSelect={(additive, range) => select(item.index, additive, range)}
+                          onDragStart={() => setDragged(item.page.id)}
+                          onDragEnd={() => setDragged(null)}
+                          onRename={() => openRename(item.page)}
+                          onDelete={() => deletePage(item.page.id)}
+                          onDrop={() => {
+                            if (dragged && dragged !== item.page.id) {
+                              void call(commands.movePage, dragged, item.index)
+                                .then(() => refresh(projectKey, pagesKey))
+                                .catch(() => undefined)
+                            }
+                            setDragged(null)
+                          }}
+                        />
+                      </div>
                     )}
                   </div>
                 )
