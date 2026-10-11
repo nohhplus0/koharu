@@ -208,11 +208,22 @@ pub(crate) async fn export(
                         ExportFormat::PngZip | ExportFormat::JpgZip => "zip",
                         _ => "cbz",
                     };
-                    destination.join(format!(
-                        "{}.{}",
-                        if safe_group.is_empty() { "comic" } else { &safe_group },
-                        archive_extension
-                    ))
+                    let base_name = if safe_group.is_empty() { "comic" } else { &safe_group };
+                    let candidate = destination.join(format!("{base_name}.{archive_extension}"));
+                    if candidate.exists() {
+                        let mut suffix = 1;
+                        loop {
+                            let candidate = destination.join(format!(
+                                "{base_name} ({suffix}).{archive_extension}"
+                            ));
+                            if !candidate.exists() {
+                                break candidate;
+                            }
+                            suffix += 1;
+                        }
+                    } else {
+                        candidate
+                    }
                 } else {
                     destination.clone()
                 };
