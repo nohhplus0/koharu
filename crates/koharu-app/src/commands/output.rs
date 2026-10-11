@@ -172,8 +172,7 @@ pub(crate) async fn export(
                         _ => "cbz",
                     };
                     destination.join(format!(
-                        "{:02}_{}.{}",
-                        group_index + 1,
+                        "{}.{}",
                         if safe_group.is_empty() { "comic" } else { &safe_group },
                         archive_extension
                     ))
