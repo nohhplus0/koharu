@@ -167,11 +167,15 @@ pub(crate) async fn export(
                         .trim()
                         .trim_end_matches(|character: char| character == '.' || character.is_whitespace())
                         .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+                    let archive_extension = match format {
+                        ExportFormat::Zip => "zip",
+                        _ => "cbz",
+                    };
                     destination.join(format!(
                         "{:02}_{}.{}",
                         group_index + 1,
                         if safe_group.is_empty() { "comic" } else { &safe_group },
-                        match format { ExportFormat::Zip => "zip", _ => "cbz" }
+                        archive_extension
                     ))
                 } else {
                     destination.clone()
