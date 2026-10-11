@@ -36,6 +36,7 @@ pub enum ExportFormat {
     Png,
     Psd,
     Cbz,
+    Zip,
 }
 
 #[tracing::instrument(
@@ -76,11 +77,18 @@ pub(crate) async fn export(
     let dialog = rfd::AsyncFileDialog::new().set_parent(&window);
     let destination = match format {
         ExportFormat::Png | ExportFormat::Psd => dialog.pick_folder().await,
-        ExportFormat::Cbz if group_names.len() > 1 => dialog.pick_folder().await,
+        ExportFormat::Cbz | ExportFormat::Zip if group_names.len() > 1 => dialog.pick_folder().await,
         ExportFormat::Cbz => {
             dialog
                 .add_filter("Comic Book Archive", &["cbz"])
                 .set_file_name(format!("{name}.cbz"))
+                .save_file()
+                .await
+        }
+        ExportFormat::Zip => {
+            dialog
+                .add_filter("ZIP Archive", &["zip"])
+                .set_file_name(format!("{name}.zip"))
                 .save_file()
                 .await
         }
@@ -92,7 +100,7 @@ pub(crate) async fn export(
     let rasterizer = desktop.rasterizer().await?;
     let frames = try_join_all(pages.iter().map(|&page| renderer.render(&snapshot, page))).await?;
     let (extension, images) = match format {
-        ExportFormat::Png | ExportFormat::Cbz => {
+        ExportFormat::Png | ExportFormat::Cbz | ExportFormat::Zip => {
             let images = tokio_rayon::spawn(move || {
                 frames
                     .par_iter()
@@ -131,7 +139,7 @@ pub(crate) async fn export(
         }
     };
     tokio_rayon::spawn(move || -> Result<()> {
-        if matches!(format, ExportFormat::Cbz) {
+        if matches!(format, ExportFormat::Cbz | ExportFormat::Zip) {
             let mut groups: Vec<(String, Vec<(String, Vec<u8>)>)> = Vec::new();
 
             // Preserve the original archive boundary while keeping page order within each group.
@@ -160,9 +168,10 @@ pub(crate) async fn export(
                         .trim_end_matches(|character: char| character == '.' || character.is_whitespace())
                         .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
                     destination.join(format!(
-                        "{:02}_{}.cbz",
+                        "{:02}_{}.{}",
                         group_index + 1,
-                        if safe_group.is_empty() { "comic" } else { &safe_group }
+                        if safe_group.is_empty() { "comic" } else { &safe_group },
+                        match format { ExportFormat::Zip => "zip", _ => "cbz" }
                     ))
                 } else {
                     destination.clone()
