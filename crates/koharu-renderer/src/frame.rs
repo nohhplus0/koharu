@@ -603,7 +603,7 @@ fn element_frame(layer: &Layer) -> Option<PreparedElementFrame> {
     let LayerKind::Text(text) = layer.kind() else {
         return None;
     };
-    let bounds = text.rendered_bounds;
+    let bounds = text.layout_bounds;
     if bounds.width > 0.0 && bounds.height > 0.0 {
         return Some(PreparedElementFrame {
             x: bounds.x,

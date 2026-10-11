@@ -191,9 +191,40 @@ impl TextRenderer {
             descriptor.font_size.unwrap_or_else(automatic_maximum)
         };
         let minimum = descriptor.minimum_font_size.min(maximum);
+        let frame_ratio = descriptor.height / descriptor.width;
+        let writing_mode = if frame_ratio >= 4.0 {
+            WritingMode::VerticalRl
+        } else {
+            descriptor.writing_mode
+        };
+        let processed_text = if frame_ratio > 2.5 && frame_ratio < 4.0 {
+            descriptor
+                .text
+                .split_inclusive(' ')
+                .map(|part| {
+                    let word = part.trim_end_matches(' ');
+                    let spaces = &part[word.len()..];
+                    let chars: Vec<char> = word.chars().collect();
+
+                    let processed_word = if chars.len() >= 4 {
+                        chars
+                            .chunks(2)
+                            .map(|chunk| chunk.iter().collect::<String>())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    } else {
+                        word.to_string()
+                    };
+
+                    format!("{}{}", processed_word, spaces)
+                })
+                .collect::<String>()
+        } else {
+            descriptor.text.clone()
+        };
         let mut layout = TextLayout::new(&fonts[0])
             .with_fallback_fonts(&fonts[1..])
-            .with_writing_mode(descriptor.writing_mode)
+            .with_writing_mode(writing_mode)
             .with_alignment(descriptor.alignment)
             .with_line_height(descriptor.line_height)
             .with_spacing(descriptor.letter_spacing, descriptor.word_spacing)
@@ -233,7 +264,7 @@ impl TextRenderer {
             layout.with_font_size(descriptor.font_size.unwrap_or(maximum))
         };
         let layout = self
-            .layout(&layout, &descriptor.text)
+            .layout(&layout, &processed_text)
             .map_err(|source| Error::Layout {
                 entity: descriptor.entity,
                 source,
@@ -261,7 +292,7 @@ impl TextRenderer {
             &mut scene,
             &mut resources,
             &layout,
-            descriptor.writing_mode,
+            writing_mode,
             &options,
             transform,
         );
