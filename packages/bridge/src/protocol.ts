@@ -55,7 +55,7 @@ export const commands = {
 	redo: () => __TAURI_INVOKE<null>("redo"),
 	process: (scope: Scope, operation: Operation) => __TAURI_INVOKE<JobId>("process", { scope, operation }),
 	stopJob: (job: JobId) => __TAURI_INVOKE<null>("stop_job", { job }),
-	export: (format: ExportFormat) => __TAURI_INVOKE<null>("export", { format }),
+	export: (format: ExportFormat, quality: number | null) => __TAURI_INVOKE<null>("export", { format, quality }),
 	getThumbnail: (page: EntityId) => __TAURI_INVOKE<ThumbnailBytes>("get_thumbnail", { page }),
 	getFonts: () => __TAURI_INVOKE<FontFamily[]>("get_fonts"),
 	getFontPreview: (familyName: string) => __TAURI_INVOKE<FontPreviewBytes>("get_font_preview", { familyName }),
@@ -180,7 +180,7 @@ export type Error = string;
 
 export type Event = { type: "started"; run: RunId } | { type: "text_delta"; run: RunId; delta: string } | { type: "reasoning_delta"; run: RunId; delta: string } | { type: "tool_started"; run: RunId; call_id: string; name: string } | { type: "tool_finished"; run: RunId; call_id: string; name: string; changed: boolean; output: string } | { type: "completed"; run: RunId; message: string } | { type: "failed"; run: RunId; message: string } | { type: "cancelled"; run: RunId };
 
-export type ExportFormat = "png" | "psd" | "cbz" | "zip";
+export type ExportFormat = "png" | "jpg" | "psd" | "png_cbz" | "jpg_cbz" | "png_zip" | "jpg_zip";
 
 export type Flux2KleinConfig = {
 	prompt?: string,
