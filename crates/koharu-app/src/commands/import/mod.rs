@@ -55,7 +55,7 @@ fn decode(path: &Path, source: EncodedPage) -> Result<Page> {
         .and_then(|extension| extension.to_str())
         .and_then(|extension| extension.parse::<Format>().ok())
     {
-        Some(Format::Zip | Format::Rar | Format::Pdf) => {
+        Some(Format::Zip | Format::Rar) => {
             let group = path
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
