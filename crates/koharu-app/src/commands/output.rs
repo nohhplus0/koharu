@@ -61,9 +61,22 @@ pub(crate) async fn export(
     if pages.is_empty() {
         return Err(anyhow::anyhow!("there are no pages to export").into());
     }
+    let mut group_names = Vec::<String>::new();
+    for &page_id in &pages {
+        let page = snapshot.page(page_id)?.page()?;
+        let group = page
+            .label
+            .split_once(super::import::ARCHIVE_GROUP_SEPARATOR)
+            .map_or(name.as_str(), |(group, _)| group);
+        if !group_names.iter().any(|existing| existing == group) {
+            group_names.push(group.to_owned());
+        }
+    }
+
     let dialog = rfd::AsyncFileDialog::new().set_parent(&window);
     let destination = match format {
         ExportFormat::Png | ExportFormat::Psd => dialog.pick_folder().await,
+        ExportFormat::Cbz if group_names.len() > 1 => dialog.pick_folder().await,
         ExportFormat::Cbz => {
             dialog
                 .add_filter("Comic Book Archive", &["cbz"])
@@ -118,48 +131,104 @@ pub(crate) async fn export(
         }
     };
     tokio_rayon::spawn(move || -> Result<()> {
-        let mut archive = if matches!(format, ExportFormat::Cbz) {
-            let directory = destination.parent().context("archive path has no parent")?;
-            Some(zip::ZipWriter::new(tempfile::NamedTempFile::new_in(
-                directory,
-            )?))
-        } else {
-            None
-        };
-        let width = pages.len().to_string().len().max(4);
-        // Async preparation and indexed encoding both preserve project order.
-        for (index, (page_id, bytes)) in pages.into_iter().zip(images).enumerate() {
-            let page = snapshot.page(page_id)?.page()?;
-            let name = page
-                .label
-                .trim()
-                .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
-            let name = name
-                .rsplit_once('.')
-                .map_or(name, |(stem, _)| stem)
-                .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
-            let name = format!(
-                "{:0width$}_{}.{extension}",
-                index + 1,
-                if name.is_empty() { "page" } else { &name }
-            );
-            if let Some(archive) = &mut archive {
-                // PNG data is already compressed.
-                let options = zip::write::SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Stored);
-                archive.start_file(name, options)?;
-                archive.write_all(&bytes)?;
-            } else {
-                std::fs::write(destination.join(name), bytes)?;
+        if matches!(format, ExportFormat::Cbz) {
+            let mut groups: Vec<(String, Vec<(String, Vec<u8>)>)> = Vec::new();
+
+            // Preserve the original archive boundary while keeping page order within each group.
+            for (page_id, bytes) in pages.into_iter().zip(images) {
+                let page = snapshot.page(page_id)?.page()?;
+                let (group, label) = page
+                    .label
+                    .split_once(super::import::ARCHIVE_GROUP_SEPARATOR)
+                    .map(|(group, label)| (group.to_owned(), label.to_owned()))
+                    .unwrap_or_else(|| (name.clone(), page.label.clone()));
+                let index = groups
+                    .iter()
+                    .position(|(existing, _)| existing == &group)
+                    .unwrap_or_else(|| {
+                        groups.push((group.clone(), Vec::new()));
+                        groups.len() - 1
+                    });
+                groups[index].1.push((label, bytes));
             }
-            tracing::info!(
-                target: "koharu_metrics",
-                metric = "page_exported",
-                format = ?format,
-            );
-        }
-        if let Some(archive) = archive {
-            archive.finish()?.persist(destination)?;
+
+            let multiple_groups = groups.len() > 1;
+            for (group_index, (group, entries)) in groups.into_iter().enumerate() {
+                let archive_destination = if multiple_groups {
+                    let safe_group = group
+                        .trim()
+                        .trim_end_matches(|character: char| character == '.' || character.is_whitespace())
+                        .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+                    destination.join(format!(
+                        "{:02}_{}.cbz",
+                        group_index + 1,
+                        if safe_group.is_empty() { "comic" } else { &safe_group }
+                    ))
+                } else {
+                    destination.clone()
+                };
+                let directory = archive_destination
+                    .parent()
+                    .context("archive path has no parent")?;
+                let mut archive =
+                    zip::ZipWriter::new(tempfile::NamedTempFile::new_in(directory)?);
+                let width = entries.len().to_string().len().max(4);
+
+                for (index, (label, bytes)) in entries.into_iter().enumerate() {
+                    let page_name = label
+                        .trim()
+                        .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
+                    let page_name = page_name
+                        .rsplit_once('.')
+                        .map_or(page_name, |(stem, _)| stem)
+                        .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+                    let page_name = format!(
+                        "{:0width$}_{}.png",
+                        index + 1,
+                        if page_name.is_empty() { "page" } else { &page_name }
+                    );
+                    // PNG data is already compressed.
+                    let options = zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Stored);
+                    archive.start_file(page_name, options)?;
+                    archive.write_all(&bytes)?;
+                    tracing::info!(
+                        target: "koharu_metrics",
+                        metric = "page_exported",
+                        format = ?format,
+                    );
+                }
+
+                archive.finish()?.persist(archive_destination)?;
+            }
+        } else {
+            // Async preparation and indexed encoding both preserve project order.
+            let width = pages.len().to_string().len().max(4);
+            for (index, (page_id, bytes)) in pages.into_iter().zip(images).enumerate() {
+                let page = snapshot.page(page_id)?.page()?;
+                let label = page
+                    .label
+                    .split_once(super::import::ARCHIVE_GROUP_SEPARATOR)
+                    .map_or(page.label.as_str(), |(_, label)| label);
+                let page_name = label
+                    .trim()
+                    .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
+                let page_name = page_name
+                    .rsplit_once('.')
+                    .map_or(page_name, |(stem, _)| stem)
+                    .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+                let page_name = format!(
+                    "{:0width$}_{}.{extension}",
+                    index + 1,
+                    if page_name.is_empty() { "page" } else { &page_name }
+                );
+                std::fs::write(destination.join(page_name), bytes)?;
+                tracing::info!(
+                    target: "koharu_metrics",
+                    metric = "page_exported",
+                    format = ?format,
+                );
+            }
         }
         Ok(())
     })

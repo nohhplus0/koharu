@@ -354,6 +354,13 @@ impl Project {
     pub(crate) async fn rename_page(&mut self, page: EntityId, label: String) -> Result<Commit> {
         let snapshot = self.snapshot();
         let current = snapshot.page(page)?.page()?;
+        let label = current
+            .label
+            .split_once(super::import::ARCHIVE_GROUP_SEPARATOR)
+            .map(|(group, _)| {
+                format!("{group}{}{label}", super::import::ARCHIVE_GROUP_SEPARATOR)
+            })
+            .unwrap_or(label);
         let patch = snapshot.patch(|edit| {
             edit.set_page(page, PageDraft::new(label, current.width, current.height))
         })?;
