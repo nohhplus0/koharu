@@ -94,7 +94,7 @@ export function PageRail() {
   const visibleRows = useMemo(() => {
     const rows: Array<
       | { kind: 'group'; key: string; group: string }
-      | { kind: 'page'; page: PageSummary; index: number }
+      | { kind: 'page'; page: PageSummary; index: number; group: string | null }
     > = []
     let previousGroup: string | null = null
 
@@ -112,7 +112,7 @@ export function PageRail() {
         rows.push({ kind: 'group', key: `${group}:${index}`, group })
       }
       previousGroup = group
-      rows.push({ kind: 'page', page: { ...rawPage, label }, index })
+      rows.push({ kind: 'page', page: { ...rawPage, label }, index, group })
     })
 
     return rows
@@ -333,7 +333,7 @@ export function PageRail() {
                         <span className='truncate'>{item.group}</span>
                       </div>
                     ) : (
-                      <div className={item.page.label ? 'pl-3' : undefined}>
+                      <div className={item.group ? 'pl-3' : undefined}>
                         <PageItem
                           page={item.page}
                           active={active === item.page.id}
