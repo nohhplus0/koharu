@@ -40,6 +40,8 @@ import { cn } from '@koharu/ui/lib/utils'
 export function TitleBar() {
   const { t } = useTranslation()
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [jpegFormat, setJpegFormat] = useState<Extract<ExportFormat, 'jpg' | 'jpg_cbz' | 'jpg_zip'> | null>(null)
+  const [jpegQuality, setJpegQuality] = useState(90)
   const macOS = useMacOS()
   const project = useProject().data
   const pagesQuery = usePages(Boolean(project))
@@ -59,17 +61,19 @@ export function TitleBar() {
   )
 
   const exportWithQuality = (format: ExportFormat) => {
-    let quality: number | null = null
     if (format === 'jpg' || format === 'jpg_cbz' || format === 'jpg_zip') {
-      const value = window.prompt('JPEG quality (1–100)', '90')
-      if (value === null) return
-      quality = Number(value)
-      if (!Number.isInteger(quality) || quality < 1 || quality > 100) {
-        window.alert('JPEG quality must be an integer from 1 to 100.')
-        return
-      }
+      setJpegQuality(90)
+      setJpegFormat(format)
+      return
     }
-    void exportProject(format, quality)
+    void exportProject(format, null)
+  }
+
+  const confirmJpegExport = () => {
+    if (!jpegFormat) return
+    const format = jpegFormat
+    setJpegFormat(null)
+    void exportProject(format, jpegQuality)
   }
 
   const run = (scope: Scope, operation: Operation = { operation: 'full' }) =>
@@ -306,6 +310,83 @@ export function TitleBar() {
         {!macOS && <WindowControls />}
       </header>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      {jpegFormat && (
+        <div
+          className='fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]'
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setJpegFormat(null)
+          }}
+        >
+          <section
+            role='dialog'
+            aria-modal='true'
+            aria-labelledby='jpeg-export-title'
+            className='w-full max-w-sm rounded-xl border border-border/80 bg-background p-5 text-foreground shadow-2xl'
+          >
+            <div className='mb-5 flex items-start gap-3'>
+              <div className='flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary'>
+                JPG
+              </div>
+              <div className='min-w-0'>
+                <h2 id='jpeg-export-title' className='text-sm font-semibold'>JPEG 내보내기 품질</h2>
+                <p className='mt-1 text-xs leading-relaxed text-muted-foreground'>
+                  품질이 높을수록 이미지가 선명해지고 파일 크기가 커집니다.
+                </p>
+              </div>
+            </div>
+            <div className='mb-2 flex items-center justify-between'>
+              <label htmlFor='jpeg-quality-range' className='text-xs font-medium'>이미지 품질</label>
+              <div className='flex items-baseline gap-1'>
+                <input
+                  aria-label='JPEG 품질 값'
+                  type='number'
+                  min={1}
+                  max={100}
+                  value={jpegQuality}
+                  onChange={(event) => {
+                    const value = Number(event.target.value)
+                    if (event.target.value !== '' && Number.isFinite(value)) {
+                      setJpegQuality(Math.min(100, Math.max(1, Math.round(value))))
+                    }
+                  }}
+                  className='h-8 w-16 rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                />
+                <span className='text-xs text-muted-foreground'>/ 100</span>
+              </div>
+            </div>
+            <input
+              id='jpeg-quality-range'
+              type='range'
+              min={1}
+              max={100}
+              step={1}
+              value={jpegQuality}
+              onChange={(event) => setJpegQuality(Number(event.target.value))}
+              className='mb-2 w-full cursor-pointer accent-primary'
+            />
+            <div className='mb-5 flex justify-between text-[11px] text-muted-foreground'>
+              <span>작은 파일</span>
+              <span>높은 품질</span>
+            </div>
+            <div className='flex justify-end gap-2'>
+              <button
+                type='button'
+                onClick={() => setJpegFormat(null)}
+                className='h-9 rounded-md border border-border px-3 text-xs font-medium transition-colors hover:bg-muted'
+              >
+                취소
+              </button>
+              <button
+                type='button'
+                onClick={confirmJpegExport}
+                className='h-9 rounded-md bg-primary px-4 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90'
+              >
+                내보내기
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   )
 }
