@@ -237,7 +237,7 @@ pub(crate) async fn export(
                         if page_name.is_empty() { "page" } else { &page_name },
                         extension
                     );
-                    // PNG data is already compressed.
+                    // Encoded image data is already compressed.
                     let options = zip::write::SimpleFileOptions::default()
                         .compression_method(zip::CompressionMethod::Stored);
                     archive.start_file(page_name, options)?;
