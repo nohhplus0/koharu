@@ -22,7 +22,7 @@ import {
   useProject,
 } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
-import { commands, type Operation, type Scope, type Stage } from '@koharu/bridge/protocol'
+import { commands, type ExportFormat, type Operation, type Scope, type Stage } from '@koharu/bridge/protocol'
 import {
   Menubar,
   MenubarContent as UiMenubarContent,
@@ -57,6 +57,20 @@ export function TitleBar() {
     commands.export,
     'menu.export',
   )
+
+  const exportWithQuality = (format: ExportFormat) => {
+    let quality: number | null = null
+    if (format === 'jpg' || format === 'jpg_cbz' || format === 'jpg_zip') {
+      const value = window.prompt('JPEG quality (1–100)', '90')
+      if (value === null) return
+      quality = Number(value)
+      if (!Number.isInteger(quality) || quality < 1 || quality > 100) {
+        window.alert('JPEG quality must be an integer from 1 to 100.')
+        return
+      }
+    }
+    void exportProject(format, quality)
+  }
 
   const run = (scope: Scope, operation: Operation = { operation: 'full' }) =>
     void call(commands.process, scope, operation).catch(() => undefined)
@@ -118,17 +132,23 @@ export function TitleBar() {
                   {t('menu.export')}
                 </MenubarSubTrigger>
                 <MenubarSubContent className='min-w-40 p-1'>
-                  {(['png', 'psd', 'cbz', 'zip'] as const).map((format) => (
+                  {(
+                    [
+                      ['png', 'PNG…'],
+                      ['jpg', 'JPG…'],
+                      ['psd', 'PSD…'],
+                      ['png_cbz', 'PNG-CBZ (by group)…'],
+                      ['jpg_cbz', 'JPG-CBZ (by group)…'],
+                      ['png_zip', 'PNG-ZIP (by group)…'],
+                      ['jpg_zip', 'JPG-ZIP (by group)…'],
+                    ] as const
+                  ).map(([format, label]) => (
                     <MenubarItem
                       key={format}
                       disabled={exporting}
-                      onClick={() => exportProject(format)}
+                      onClick={() => exportWithQuality(format)}
                     >
-                      {format === 'cbz'
-                        ? 'CBZ (by group)…'
-                        : format === 'zip'
-                          ? 'ZIP (by group)…'
-                          : `${format.toUpperCase()}…`}
+                      {label}
                     </MenubarItem>
                   ))}
                 </MenubarSubContent>
