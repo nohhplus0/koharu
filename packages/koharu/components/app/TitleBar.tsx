@@ -118,13 +118,13 @@ export function TitleBar() {
                   {t('menu.export')}
                 </MenubarSubTrigger>
                 <MenubarSubContent className='min-w-40 p-1'>
-                  {(['png', 'psd', 'cbz'] as const).map((format) => (
+                  {(['png', 'psd', 'cbz', 'zip'] as const).map((format) => (
                     <MenubarItem
                       key={format}
                       disabled={exporting}
                       onClick={() => exportProject(format)}
                     >
-                      {format === 'cbz' ? 'CBZ (by group)…' : `${format.toUpperCase()}…`}
+                      {format === 'cbz' ? 'CBZ (by group)…' : format === 'zip' ? 'ZIP (by group)…' : `${format.toUpperCase()}…`}
                     </MenubarItem>
                   ))}
                 </MenubarSubContent>
