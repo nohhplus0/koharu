@@ -306,7 +306,7 @@ export function PageRail() {
               <PageImportMenu importing={importing} onImport={importPages} />
             </div>
           </div>
-        ) : visiblePages.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <div className='grid flex-1 place-items-center px-4 text-center text-[10px] text-muted-foreground'>
             {t('navigator.noResults')}
           </div>
