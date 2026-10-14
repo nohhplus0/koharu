@@ -234,7 +234,18 @@ pub(crate) async fn export(
                 })?;
                 // Convert the renderer frame before entering the Rayon closure so its
                 // error type does not need to convert into koharu_rasterizer::Error.
-                let raster_frame = frame.raster_frame()?;
+                let raster_frame = frame.raster_frame().map_err(|error| {
+                    tracing::error!(
+                        target: "koharu_export",
+                        group = %group,
+                        page_index = index + 1,
+                        page_id = ?page_id,
+                        source_label = %label,
+                        error = %error,
+                        "failed to convert rendered frame for rasterization"
+                    );
+                    error
+                })?;
                 let rasterizer = Arc::clone(&rasterizer);
                 tracing::info!(
                     target: "koharu_export",
