@@ -244,6 +244,7 @@
     "about": "Hakkında",
     "closeProject": "Projeyi Kapat",
     "delete": "Seçilenleri Sil",
+    "deleteSelectedPages": "Seçili sayfaları sil ({{count}})",
     "discord": "Discord",
     "edit": "Düzenle",
     "export": "Projeyi Dışa Aktar",
