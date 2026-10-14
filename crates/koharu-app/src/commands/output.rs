@@ -126,7 +126,21 @@ pub(crate) async fn export(
         };
         let multiple_groups = group_names.len() > 1;
 
+        tracing::info!(
+            target: "koharu_export",
+            format = ?format,
+            group_count = group_names.len(),
+            page_count = pages.len(),
+            destination = %destination.display(),
+            "starting archive export"
+        );
+
         for group in &group_names {
+            tracing::info!(
+                target: "koharu_export",
+                group = %group,
+                "collecting pages for export group"
+            );
             // Select one group's page IDs and labels without retaining image data.
             let mut group_pages = Vec::new();
             for &page_id in &pages {
@@ -140,6 +154,13 @@ pub(crate) async fn export(
                     group_pages.push((page_id, label.to_owned()));
                 }
             }
+
+            tracing::info!(
+                target: "koharu_export",
+                group = %group,
+                page_count = group_pages.len(),
+                "collected pages for export group"
+            );
 
             let archive_destination = if multiple_groups {
                 let safe_group = group
@@ -166,26 +187,87 @@ pub(crate) async fn export(
                 destination.clone()
             };
 
+            tracing::info!(
+                target: "koharu_export",
+                group = %group,
+                archive = %archive_destination.display(),
+                "creating archive"
+            );
             let directory = archive_destination
                 .parent()
                 .context("archive path has no parent")?;
-            let mut archive =
-                zip::ZipWriter::new(tempfile::NamedTempFile::new_in(directory)?);
-            let width = group_pages.len().to_string().len().max(4);
+            let temp_file = tempfile::NamedTempFile::new_in(directory).map_err(|error| {
+                tracing::error!(
+                    target: "koharu_export",
+                    group = %group,
+                    archive = %archive_destination.display(),
+                    error = %error,
+                    "failed to create temporary archive file"
+                );
+                error
+            })?;
+            let mut archive = zip::ZipWriter::new(temp_file);
+            let group_page_count = group_pages.len();
+            let width = group_page_count.to_string().len().max(4);
 
             for (index, (page_id, label)) in group_pages.into_iter().enumerate() {
-                let frame = renderer.render(&snapshot, page_id).await?;
+                tracing::info!(
+                    target: "koharu_export",
+                    group = %group,
+                    page_index = index + 1,
+                    page_count = group_page_count,
+                    page_id = ?page_id,
+                    source_label = %label,
+                    "rendering export page"
+                );
+                let frame = renderer.render(&snapshot, page_id).await.map_err(|error| {
+                    tracing::error!(
+                        target: "koharu_export",
+                        group = %group,
+                        page_index = index + 1,
+                        page_id = ?page_id,
+                        source_label = %label,
+                        error = %error,
+                        "page rendering failed"
+                    );
+                    error
+                })?;
                 // Convert the renderer frame before entering the Rayon closure so its
                 // error type does not need to convert into koharu_rasterizer::Error.
                 let raster_frame = frame.raster_frame()?;
                 let rasterizer = Arc::clone(&rasterizer);
+                tracing::info!(
+                    target: "koharu_export",
+                    group = %group,
+                    page_index = index + 1,
+                    source_label = %label,
+                    "rasterizing export page"
+                );
                 let image = tokio_rayon::spawn(move || {
                     rasterizer
                         .rasterize(&raster_frame, RasterOptions::default())
                         .map(|raster| raster.image)
                 })
-                .await?;
+                .await
+                .map_err(|error| {
+                    tracing::error!(
+                        target: "koharu_export",
+                        group = %group,
+                        page_index = index + 1,
+                        source_label = %label,
+                        error = %error,
+                        "page rasterization task failed"
+                    );
+                    error
+                })?;
 
+                tracing::info!(
+                    target: "koharu_export",
+                    group = %group,
+                    page_index = index + 1,
+                    source_label = %label,
+                    "encoding export page"
+                );
                 let bytes = tokio_rayon::spawn(move || -> Result<Vec<u8>> {
                     let mut bytes = Vec::new();
                     match format {
@@ -215,7 +297,18 @@ pub(crate) async fn export(
                     }
                     Ok(bytes)
                 })
-                .await?;
+                .await
+                .map_err(|error| {
+                    tracing::error!(
+                        target: "koharu_export",
+                        group = %group,
+                        page_index = index + 1,
+                        source_label = %label,
+                        error = %error,
+                        "page image encoding task failed"
+                    );
+                    error
+                })?;
 
                 let page_name = label
                     .trim()
@@ -232,18 +325,88 @@ pub(crate) async fn export(
                 );
                 let options = zip::write::SimpleFileOptions::default()
                     .compression_method(zip::CompressionMethod::Stored);
-                archive.start_file(page_name, options)?;
-                archive.write_all(&bytes)?;
+                tracing::info!(
+                    target: "koharu_export",
+                    group = %group,
+                    page_index = index + 1,
+                    source_label = %label,
+                    archive_entry = %page_name,
+                    encoded_bytes = bytes.len(),
+                    "writing page to archive"
+                );
+                archive.start_file(&page_name, options).map_err(|error| {
+                    tracing::error!(
+                        target: "koharu_export",
+                        group = %group,
+                        page_index = index + 1,
+                        source_label = %label,
+                        archive_entry = %page_name,
+                        error = %error,
+                        "failed to start archive entry"
+                    );
+                    error
+                })?;
+                archive.write_all(&bytes).map_err(|error| {
+                    tracing::error!(
+                        target: "koharu_export",
+                        group = %group,
+                        page_index = index + 1,
+                        source_label = %label,
+                        archive_entry = %page_name,
+                        encoded_bytes = bytes.len(),
+                        error = %error,
+                        "failed to write page bytes to archive"
+                    );
+                    error
+                })?;
                 tracing::info!(
                     target: "koharu_metrics",
                     metric = "page_exported",
                     format = ?format,
                 );
+                tracing::info!(
+                    target: "koharu_export",
+                    group = %group,
+                    page_index = index + 1,
+                    archive_entry = %page_name,
+                    "page exported successfully"
+                );
                 // Drop the encoded image bytes before rendering the next page.
             }
 
-            archive.finish()?.persist(archive_destination)?;
+            let finished_archive = archive.finish().map_err(|error| {
+                tracing::error!(
+                    target: "koharu_export",
+                    group = %group,
+                    archive = %archive_destination.display(),
+                    error = %error,
+                    "failed to finalize archive"
+                );
+                error
+            })?;
+            finished_archive.persist(&archive_destination).map_err(|error| {
+                tracing::error!(
+                    target: "koharu_export",
+                    group = %group,
+                    archive = %archive_destination.display(),
+                    error = %error,
+                    "failed to move completed archive to destination"
+                );
+                error
+            })?;
+            tracing::info!(
+                target: "koharu_export",
+                group = %group,
+                archive = %archive_destination.display(),
+                "archive export completed"
+            );
         }
+        tracing::info!(
+            target: "koharu_export",
+            format = ?format,
+            group_count = group_names.len(),
+            "archive export completed successfully"
+        );
         return Ok(());
     }
 
