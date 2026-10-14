@@ -175,13 +175,16 @@ pub(crate) async fn export(
 
             for (index, (page_id, label)) in group_pages.into_iter().enumerate() {
                 let frame = renderer.render(&snapshot, page_id).await?;
+                // Convert the renderer frame before entering the Rayon closure so its
+                // error type does not need to convert into koharu_rasterizer::Error.
+                let raster_frame = frame.raster_frame()?;
                 let rasterizer = Arc::clone(&rasterizer);
                 let image = tokio_rayon::spawn(move || {
                     rasterizer
-                        .rasterize(&frame.raster_frame()?, RasterOptions::default())
+                        .rasterize(&raster_frame, RasterOptions::default())
                         .map(|raster| raster.image)
                 })
-                .await??;
+                .await?;
 
                 let bytes = tokio_rayon::spawn(move || -> Result<Vec<u8>> {
                     let mut bytes = Vec::new();
@@ -212,7 +215,7 @@ pub(crate) async fn export(
                     }
                     Ok(bytes)
                 })
-                .await??;
+                .await?;
 
                 let page_name = label
                     .trim()
