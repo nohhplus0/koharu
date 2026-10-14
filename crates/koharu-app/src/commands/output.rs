@@ -595,11 +595,38 @@ pub(crate) async fn export(
                     index + 1,
                     if page_name.is_empty() { "page" } else { &page_name }
                 );
-                std::fs::write(destination.join(page_name), bytes)?;
+                let output_path = destination.join(&page_name);
+                tracing::info!(
+                    target: "koharu_export",
+                    page_index = index + 1,
+                    page_count = pages.len(),
+                    source_label = %label,
+                    output_path = %output_path.display(),
+                    encoded_bytes = bytes.len(),
+                    "writing exported image"
+                );
+                std::fs::write(&output_path, bytes).map_err(|error| {
+                    tracing::error!(
+                        target: "koharu_export",
+                        page_index = index + 1,
+                        page_count = pages.len(),
+                        source_label = %label,
+                        output_path = %output_path.display(),
+                        error = %error,
+                        "failed to write exported image"
+                    );
+                    error
+                })?;
                 tracing::info!(
                     target: "koharu_metrics",
                     metric = "page_exported",
                     format = ?format,
+                );
+                tracing::info!(
+                    target: "koharu_export",
+                    page_index = index + 1,
+                    output_path = %output_path.display(),
+                    "image exported successfully"
                 );
             }
         }
