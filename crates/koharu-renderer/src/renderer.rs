@@ -1208,6 +1208,7 @@ fn build_node(
                         width,
                         height,
                     };
+                    let color = text.foreground_color;
                     Ok(RetainedNode {
                         descriptor,
                         scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
@@ -1219,7 +1220,7 @@ fn build_node(
                             layout_bounds: bounds,
                             post_script_fonts: Vec::new(),
                             font_size: 0.0,
-                            color: text.foreground_color,
+                            color,
                         }),
                         diagnostics: Arc::from([]),
                     })
