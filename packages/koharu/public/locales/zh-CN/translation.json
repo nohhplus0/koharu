@@ -244,6 +244,7 @@
     "about": "关于",
     "closeProject": "关闭项目",
     "delete": "删除所选项",
+    "deleteSelectedPages": "删除所选页面（{{count}}）",
     "discord": "Discord",
     "edit": "编辑",
     "export": "导出项目",
