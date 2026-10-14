@@ -244,6 +244,7 @@
     "about": "About",
     "closeProject": "Close Project",
     "delete": "Delete Selected",
+    "deleteSelectedPages": "Delete Selected Pages ({{count}})",
     "discord": "Discord",
     "edit": "Edit",
     "export": "Export Project",
