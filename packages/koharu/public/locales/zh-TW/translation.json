@@ -244,6 +244,7 @@
     "about": "關於",
     "closeProject": "關閉專案",
     "delete": "刪除所選項目",
+    "deleteSelectedPages": "刪除所選頁面（{{count}}）",
     "discord": "Discord",
     "edit": "編輯",
     "export": "匯出專案",
