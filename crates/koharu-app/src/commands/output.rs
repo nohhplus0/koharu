@@ -109,6 +109,141 @@ pub(crate) async fn export(
     }
     let renderer = desktop.renderer();
     let rasterizer = desktop.rasterizer().await?;
+
+    // Archive exports are processed one page at a time. Keeping all rendered frames
+    // and encoded images in vectors makes memory usage grow with the whole project.
+    if matches!(
+        format,
+        ExportFormat::PngCbz | ExportFormat::JpgCbz | ExportFormat::PngZip | ExportFormat::JpgZip
+    ) {
+        let extension = match format {
+            ExportFormat::PngCbz | ExportFormat::PngZip => "png",
+            _ => "jpg",
+        };
+        let archive_extension = match format {
+            ExportFormat::PngZip | ExportFormat::JpgZip => "zip",
+            _ => "cbz",
+        };
+        let multiple_groups = group_names.len() > 1;
+
+        for group in &group_names {
+            // Select one group's page IDs and labels without retaining image data.
+            let mut group_pages = Vec::new();
+            for &page_id in &pages {
+                let page = snapshot.page(page_id)?.page()?;
+                let (page_group, label) = page
+                    .label
+                    .split_once(super::import::ARCHIVE_GROUP_SEPARATOR)
+                    .map(|(group, label)| (group, label))
+                    .unwrap_or((name.as_str(), page.label.as_str()));
+                if page_group == group {
+                    group_pages.push((page_id, label.to_owned()));
+                }
+            }
+
+            let archive_destination = if multiple_groups {
+                let safe_group = group
+                    .trim()
+                    .trim_end_matches(|character: char| character == '.' || character.is_whitespace())
+                    .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+                let base_name = if safe_group.is_empty() { "comic" } else { &safe_group };
+                let candidate = destination.join(format!("{base_name}.{archive_extension}"));
+                if candidate.exists() {
+                    let mut suffix = 1;
+                    loop {
+                        let candidate = destination.join(format!(
+                            "{base_name} ({suffix}).{archive_extension}"
+                        ));
+                        if !candidate.exists() {
+                            break candidate;
+                        }
+                        suffix += 1;
+                    }
+                } else {
+                    candidate
+                }
+            } else {
+                destination.clone()
+            };
+
+            let directory = archive_destination
+                .parent()
+                .context("archive path has no parent")?;
+            let mut archive =
+                zip::ZipWriter::new(tempfile::NamedTempFile::new_in(directory)?);
+            let width = group_pages.len().to_string().len().max(4);
+
+            for (index, (page_id, label)) in group_pages.into_iter().enumerate() {
+                let frame = renderer.render(&snapshot, page_id).await?;
+                let rasterizer = Arc::clone(&rasterizer);
+                let image = tokio_rayon::spawn(move || {
+                    rasterizer
+                        .rasterize(&frame.raster_frame()?, RasterOptions::default())
+                        .map(|raster| raster.image)
+                })
+                .await??;
+
+                let bytes = tokio_rayon::spawn(move || -> Result<Vec<u8>> {
+                    let mut bytes = Vec::new();
+                    match format {
+                        ExportFormat::PngCbz | ExportFormat::PngZip => {
+                            PngEncoder::new_with_quality(
+                                &mut bytes,
+                                CompressionType::Best,
+                                FilterType::Adaptive,
+                            )
+                            .write_image(
+                                image.as_raw(),
+                                image.width(),
+                                image.height(),
+                                ExtendedColorType::Rgba8,
+                            )?;
+                        }
+                        ExportFormat::JpgCbz | ExportFormat::JpgZip => {
+                            let image = image::DynamicImage::ImageRgba8(image).to_rgb8();
+                            JpegEncoder::new_with_quality(&mut bytes, jpeg_quality).write_image(
+                                image.as_raw(),
+                                image.width(),
+                                image.height(),
+                                ExtendedColorType::Rgb8,
+                            )?;
+                        }
+                        _ => unreachable!("archive format checked above"),
+                    }
+                    Ok(bytes)
+                })
+                .await??;
+
+                let page_name = label
+                    .trim()
+                    .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
+                let page_name = page_name
+                    .rsplit_once('.')
+                    .map_or(page_name, |(stem, _)| stem)
+                    .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
+                let page_name = format!(
+                    "{:0width$}_{}.{}",
+                    index + 1,
+                    if page_name.is_empty() { "page" } else { &page_name },
+                    extension
+                );
+                let options = zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored);
+                archive.start_file(page_name, options)?;
+                archive.write_all(&bytes)?;
+                tracing::info!(
+                    target: "koharu_metrics",
+                    metric = "page_exported",
+                    format = ?format,
+                );
+                // Drop the encoded image bytes before rendering the next page.
+            }
+
+            archive.finish()?.persist(archive_destination)?;
+        }
+        return Ok(());
+    }
+
     let frames = try_join_all(pages.iter().map(|&page| renderer.render(&snapshot, page))).await?;
     let (extension, images) = match format {
         ExportFormat::Png | ExportFormat::PngCbz | ExportFormat::PngZip => {
