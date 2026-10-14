@@ -244,6 +244,7 @@
     "about": "정보",
     "closeProject": "프로젝트 닫기",
     "delete": "선택 항목 삭제",
+    "deleteSelectedPages": "선택한 페이지 삭제 ({{count}}개)",
     "discord": "Discord",
     "edit": "편집",
     "export": "프로젝트 내보내기",
