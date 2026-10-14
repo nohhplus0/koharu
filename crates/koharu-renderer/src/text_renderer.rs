@@ -381,7 +381,7 @@ fn is_chinese_or_japanese_language(language: &str) -> bool {
         .is_some_and(|primary| matches!(primary.to_ascii_lowercase().as_str(), "ja" | "zh"))
 }
 
-fn fit_inset(rect: LayoutBox, mut inset: [f32; 4]) -> [f32; 4] {
+fn fit_inset(rect: LayoutBox, inset: [f32; 4]) -> [f32; 4] {
     fn fit_pair(first: &mut f32, second: &mut f32, extent: f32) {
         let total = *first + *second;
         let maximum = extent.max(0.0) * 0.5;
@@ -393,9 +393,12 @@ fn fit_inset(rect: LayoutBox, mut inset: [f32; 4]) -> [f32; 4] {
     }
 
     // Insets are ordered top, right, bottom, left.
-    fit_pair(&mut inset[3], &mut inset[1], rect.width);
-    fit_pair(&mut inset[0], &mut inset[2], rect.height);
-    inset
+    // Copy the values into locals to keep the mutable borrows disjoint.
+    let (mut top, mut right, mut bottom, mut left) =
+        (inset[0], inset[1], inset[2], inset[3]);
+    fit_pair(&mut left, &mut right, rect.width);
+    fit_pair(&mut top, &mut bottom, rect.height);
+    [top, right, bottom, left]
 }
 
 fn inset(rect: LayoutBox, [top, right, bottom, left]: [f32; 4]) -> LayoutBox {
