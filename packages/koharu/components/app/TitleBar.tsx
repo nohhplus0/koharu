@@ -1,7 +1,7 @@
 'use client'
 
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { FilePlus2, FolderOpen, LoaderCircle, Settings } from 'lucide-react'
+import { FilePlus2, FolderOpen, LoaderCircle, Settings, Trash2 } from 'lucide-react'
 import Image from 'next/image'
 import { useState, type ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -50,6 +50,7 @@ export function TitleBar() {
   const page = project ? (pageQuery.data ?? null) : null
   const selectedPages = useKoharuStore((state) => state.selectedPages)
   const selectedLayers = useKoharuStore((state) => state.selectedLayers)
+  const selectPages = useKoharuStore((state) => state.selectPages)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
   const requestCanvasFit = useKoharuStore((state) => state.requestCanvasFit)
@@ -215,6 +216,22 @@ export function TitleBar() {
               >
                 {t('menu.delete')}
                 <MenubarShortcut>Del</MenubarShortcut>
+              </MenubarItem>
+              <MenubarItem
+                disabled={selectedPages.length === 0}
+                variant='destructive'
+                onClick={() =>
+                  void call(commands.deletePages, selectedPages)
+                    .then(() => {
+                      selectPages([])
+                      selectLayers([])
+                      return refresh(projectKey, pagesKey, pageKey)
+                    })
+                    .catch(() => undefined)
+                }
+              >
+                <Trash2 />
+                {t('menu.deleteSelectedPages', { count: selectedPages.length })}
               </MenubarItem>
             </MenubarContent>
           </MenubarMenu>
