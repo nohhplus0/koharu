@@ -157,8 +157,16 @@ impl TextRenderer {
             width: descriptor.width,
             height: descriptor.height,
         };
+        // Keep a usable text area even for unusually small bubble geometries.
+        // Scale opposing insets together so at least half of each positive axis remains
+        // available for text layout.
+        let text_inset = if is_bubble_text {
+            fit_inset(frame, descriptor.text_inset)
+        } else {
+            [0.0; 4]
+        };
         let bounds = if is_bubble_text {
-            inset(frame, descriptor.text_inset)
+            inset(frame, text_inset)
         } else {
             frame
         };
@@ -241,7 +249,7 @@ impl TextRenderer {
                 .with_max_height(bounds.height);
         }
         if let Some(contour) = &descriptor.balloon_contour {
-            let [top, _, _, left] = descriptor.text_inset;
+            let [top, _, _, left] = text_inset;
             let contour = contour.iter().map(|&(x, y)| (x - left, y - top)).collect();
             layout = layout.with_comic_balloon(
                 bounds.width,
@@ -371,6 +379,23 @@ fn is_chinese_or_japanese_language(language: &str) -> bool {
         .split(['-', '_'])
         .next()
         .is_some_and(|primary| matches!(primary.to_ascii_lowercase().as_str(), "ja" | "zh"))
+}
+
+fn fit_inset(rect: LayoutBox, mut inset: [f32; 4]) -> [f32; 4] {
+    fn fit_pair(first: &mut f32, second: &mut f32, extent: f32) {
+        let total = *first + *second;
+        let maximum = extent.max(0.0) * 0.5;
+        if total > maximum && total > 0.0 {
+            let scale = maximum / total;
+            *first *= scale;
+            *second *= scale;
+        }
+    }
+
+    // Insets are ordered top, right, bottom, left.
+    fit_pair(&mut inset[3], &mut inset[1], rect.width);
+    fit_pair(&mut inset[0], &mut inset[2], rect.height);
+    inset
 }
 
 fn inset(rect: LayoutBox, [top, right, bottom, left]: [f32; 4]) -> LayoutBox {
