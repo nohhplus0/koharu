@@ -576,7 +576,8 @@ pub(crate) async fn export(
             }
         } else {
             // Async preparation and indexed encoding both preserve project order.
-            let width = pages.len().to_string().len().max(4);
+            let page_count = pages.len();
+            let width = page_count.to_string().len().max(4);
             for (index, (page_id, bytes)) in pages.into_iter().zip(images).enumerate() {
                 let page = snapshot.page(page_id)?.page()?;
                 let label = page
@@ -599,7 +600,7 @@ pub(crate) async fn export(
                 tracing::info!(
                     target: "koharu_export",
                     page_index = index + 1,
-                    page_count = pages.len(),
+                    page_count = page_count,
                     source_label = %label,
                     output_path = %output_path.display(),
                     encoded_bytes = bytes.len(),
@@ -609,7 +610,7 @@ pub(crate) async fn export(
                     tracing::error!(
                         target: "koharu_export",
                         page_index = index + 1,
-                        page_count = pages.len(),
+                        page_count = page_count,
                         source_label = %label,
                         output_path = %output_path.display(),
                         error = %error,
