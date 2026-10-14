@@ -1160,22 +1160,72 @@ fn build_node(
             })
         }
         NodeDescriptor::Text(text) => {
-            let rendered = TextRenderer::new().render_descriptor(text, fonts)?;
-            Ok(RetainedNode {
-                descriptor,
-                scene: rendered.scene,
-                resources: rendered.resources,
-                local_bounds: rendered.local_bounds,
-                image: None,
-                text: Some(LocalTextMetadata {
-                    rendered_bounds: rendered.metadata.rendered_bounds,
-                    layout_bounds: rendered.metadata.layout_bounds,
-                    post_script_fonts: rendered.metadata.post_script_fonts,
-                    font_size: rendered.metadata.font_size,
-                    color: rendered.metadata.color,
+            match TextRenderer::new().render_descriptor(text, fonts) {
+                Ok(rendered) => Ok(RetainedNode {
+                    descriptor,
+                    scene: rendered.scene,
+                    resources: rendered.resources,
+                    local_bounds: rendered.local_bounds,
+                    image: None,
+                    text: Some(LocalTextMetadata {
+                        rendered_bounds: rendered.metadata.rendered_bounds,
+                        layout_bounds: rendered.metadata.layout_bounds,
+                        post_script_fonts: rendered.metadata.post_script_fonts,
+                        font_size: rendered.metadata.font_size,
+                        color: rendered.metadata.color,
+                    }),
+                    diagnostics: rendered.diagnostics.into(),
                 }),
-                diagnostics: rendered.diagnostics.into(),
-            })
+                Err(Error::InvalidInput(message))
+                    if message.contains("text inset leaves no layout area") =>
+                {
+                    // A malformed text inset must not make the entire page impossible to open.
+                    // Keep the entity descriptor in the retained node so the source data remains
+                    // untouched; only its unrenderable visual is omitted until the entity is fixed.
+                    let entity = text.entity;
+                    tracing::warn!(
+                        target: "koharu_renderer",
+                        %entity,
+                        width = text.width,
+                        height = text.height,
+                        text_inset = ?text.text_inset,
+                        error = %message,
+                        "skipping text entity with invalid layout area so the page can still render"
+                    );
+                    let width = if text.width.is_finite() && text.width > 0.0 {
+                        text.width
+                    } else {
+                        1.0
+                    };
+                    let height = if text.height.is_finite() && text.height > 0.0 {
+                        text.height
+                    } else {
+                        1.0
+                    };
+                    let bounds = RenderBounds {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    };
+                    Ok(RetainedNode {
+                        descriptor,
+                        scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
+                        resources: Arc::from([]),
+                        local_bounds: bounds,
+                        image: None,
+                        text: Some(LocalTextMetadata {
+                            rendered_bounds: bounds,
+                            layout_bounds: bounds,
+                            post_script_fonts: Vec::new(),
+                            font_size: 0.0,
+                            color: text.foreground_color,
+                        }),
+                        diagnostics: Arc::from([]),
+                    })
+                }
+                Err(error) => Err(error),
+            }
         }
     }
 }
