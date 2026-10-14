@@ -244,6 +244,7 @@
     "about": "Koharuについて",
     "closeProject": "プロジェクトを閉じる",
     "delete": "選択項目を削除",
+    "deleteSelectedPages": "選択したページを削除（{{count}}）",
     "discord": "Discord",
     "edit": "編集",
     "export": "プロジェクトを書き出す",
