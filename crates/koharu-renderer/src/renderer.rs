@@ -1210,7 +1210,7 @@ fn build_node(
                     };
                     let color = text.foreground_color;
                     Ok(RetainedNode {
-                        descriptor,
+                        descriptor: descriptor.clone(),
                         scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
                         resources: Arc::from([]),
                         local_bounds: bounds,
