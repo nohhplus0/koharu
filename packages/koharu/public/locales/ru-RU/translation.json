@@ -244,6 +244,7 @@
     "about": "О программе",
     "closeProject": "Закрыть проект",
     "delete": "Удалить выбранное",
+    "deleteSelectedPages": "Удалить выбранные страницы ({{count}})",
     "discord": "Discord",
     "edit": "Правка",
     "export": "Экспорт проекта",
